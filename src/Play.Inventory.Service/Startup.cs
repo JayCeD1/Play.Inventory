@@ -38,12 +38,29 @@ namespace Play.Inventory.Service
             .AddTransientHttpErrorPolicy(builder => builder.Or<TimeoutRejectedException>().WaitAndRetryAsync(
                 5,
                 retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))
-                                + TimeSpan.FromMilliseconds(jitterer.Next(0,1000)),
+                                + TimeSpan.FromMilliseconds(jitterer.Next(0, 1000)),
                 onRetry: (outcome, timespan, retryAttempt) =>
                 {
-                    var serviceProvider =  services.BuildServiceProvider();
-                    serviceProvider.GetService<ILogger<CatalogClient>>() ?
+                    var serviceProvider = services.BuildServiceProvider();
+                    serviceProvider.GetService<ILogger<CatalogClient>>()?
                         .LogWarning($"Delaying for {timespan.TotalSeconds} seconds, then making retry {retryAttempt} ");
+                }
+            ))
+            .AddTransientHttpErrorPolicy(builder => builder.Or<TimeoutRejectedException>().CircuitBreakerAsync(
+                3,
+                TimeSpan.FromSeconds(15),
+                onBreak: (outcome, timespan) =>
+                {
+                    var serviceProvider = services.BuildServiceProvider();
+                    serviceProvider.GetService<ILogger<CatalogClient>>()?
+                       .LogWarning($"Opening the circuit for {timespan.TotalSeconds} seconds...");
+
+                },
+                onReset: () =>
+                {
+                    var serviceProvider = services.BuildServiceProvider();
+                    serviceProvider.GetService<ILogger<CatalogClient>>()?
+                       .LogWarning($"Closing the circuit...");
                 }
             ))
             //1 second timeout policy
